@@ -18,7 +18,7 @@ uint8_t pwm_pins[3] = { 10, 5, 6 };
 #define b_dt digitalRead(11)
 
 // How much to increment the percieved brightness ( 0 - 1000)
-#define STEP 100
+#define STEP 50
 
 // Power state
 bool power = false;
@@ -119,6 +119,7 @@ void loop() {
     int value = results.value;
     decodeIr(value);
     irrecv.resume();
+    updatePwm(100);
   }
 
   // Update pwm states
@@ -135,16 +136,16 @@ void step(uint8_t colour, int step) {
 
   if (step > 0) {  // Increase
     if (new_value > 1000) {
-      percieved[colour] = 1000;
+      new_percieved[colour] = 1000;
     } else {
-      percieved[colour] = new_value;
+      new_percieved[colour] = new_value;
     }
     power = true;
   } else {  // Decrease
     if (new_value < 0) {
-      percieved[colour] = 0;
+      new_percieved[colour] = 0;
     } else {
-      percieved[colour] = new_value;
+      new_percieved[colour] = new_value;
     }
   }
 }
@@ -197,19 +198,61 @@ void changeColour() {
   } else {
     current_colour = current_colour +1;
   }
+  indicateSelected();
 }
 
+// ==============  Indicate the selected colour  ===============================
 
-// ==============  Update PWM states ( no ramp )  ==============================
+void indicateSelected() {
+  for (uint8_t i = 0; i < 3; i++) {
+    saved[i] = percieved[i];
+  }
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = 0;
+  }
+  updatePwm(200);
+
+  new_percieved[current_colour] = 700;
+  updatePwm(200);
+  delay(100);
+  new_percieved[current_colour] = 0;
+  updatePwm(400);
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = saved[i];
+  }
+  updatePwm(400);
+}
+
+// ==============  Update PWM states  ==========================================
 
 void updatePwm(uint16_t duration) {
   if (duration == 0) {
     for (uint8_t i = 0; i < 3; i++) {
-      pwm[i] = (255.0)/(pow(1000, 3)) * pow(percieved[i], 3);
+      pwm[i] = (255.0)/(pow(1000, 3)) * pow(new_percieved[i], 3);
       analogWrite(pwm_pins[i], pwm[i]);
+      percieved[i] = new_percieved[i];
     }
   } else {
+    for (int t = 1; t < duration; t += 3) {
+      for (uint8_t i = 0; i < 3; i++) {
 
+        int diff = new_percieved[i] - percieved[i];
+
+        int ramp_perc = (diff/2) - (diff/2) * cos((t * PI) / duration ) + percieved[i];
+
+        pwm[i] = (255.0)/(pow(1000, 3)) * pow(ramp_perc, 3);
+
+        analogWrite(pwm_pins[i], pwm[i]);
+
+      }
+      delay(2);
+    }
+
+    for (uint8_t i = 0; i < 3; i++) {
+      percieved[i] = new_percieved[i];
+    }
   }
 }
 
@@ -233,13 +276,15 @@ void switchPwr() {
     }
 
     for (uint8_t i = 0; i < 3; i++) {
-      percieved[i] = 0;
+      new_percieved[i] = 0;
     }
     power = false;
+    updatePwm(1000);
   } else {
     for (uint8_t i = 0; i < 3; i++) {
-      percieved[i] = saved[i];
+      new_percieved[i] = saved[i];
     }
     power = true;
+    updatePwm(800);
   }
 }
