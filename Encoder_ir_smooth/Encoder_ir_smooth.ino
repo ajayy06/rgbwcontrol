@@ -23,8 +23,11 @@ uint8_t pwm_pins[3] = { 10, 5, 6 };
 // Power state
 bool power = false;
 
+// Are we saving a colour?
+bool saving = false;
 
-// ==============  Arrays for storing data  ====================================
+
+// ==============  Arrays etc. for storing data  ===============================
 
 // Clock signal states
 bool clk_state[3] = { 0, 0, 0 };
@@ -50,6 +53,24 @@ uint8_t current_colour = 0;
 // Save the colours for powering off
 uint16_t saved[3] = { 0, 0, 0 };
 
+// Secondary save slot for indicating selected etc.
+uint16_t saved2[3] = { 0, 0, 0 };
+
+// For saving colours
+typedef struct {
+  uint16_t r;
+  uint16_t g;
+  uint16_t b;
+} Colour;
+
+Colour saved_colours[3] = {
+  {0, 0, 0},
+  {0, 0, 0},
+  {0, 0, 0}
+};
+
+
+
 
 // ==============  IR Reciever  ================================================
 
@@ -63,6 +84,9 @@ decode_results results;
 // ==============  SETUP  ======================================================
 
 void setup() {
+  // Random seed from analog noise
+  randomSeed(analogRead(A5));
+
   pinMode(pwm_pins[0], OUTPUT);
   pinMode(pwm_pins[1], OUTPUT);
   pinMode(pwm_pins[2], OUTPUT);
@@ -115,11 +139,14 @@ void loop() {
 
   // IR reciever
   if (irrecv.decode(&results)) {
-    // Serial.println(results.value, HEX);
-    int value = results.value;
-    decodeIr(value);
+    //Serial.println(results.value, HEX);
+    decodeIr();
     irrecv.resume();
     updatePwm(100);
+  }
+
+  if (saving) {
+    saveColour();
   }
 
   // Update pwm states
@@ -152,42 +179,176 @@ void step(uint8_t colour, int step) {
 
 // ==============  Decode Ir reciever values  ==================================
 
-void decodeIr(int &value) {
+void decodeIr() {
   switch(results.value) {
-    case 0x12758:
+    case 0x12758: // up
       // Serial.println("up");
       step(current_colour, STEP);
       break;
-    case 0x2758:
+    case 0x2758: // up
       // Serial.println("up");
       step(current_colour, STEP);
       break;
-    case 0x12759:
+    case 0x12759: // down
       // Serial.println("decodeIr.down");
       step(current_colour, - STEP);
       break;
-    case 0x2759:
+    case 0x2759: // down
       // Serial.println("decideIr.down");
       step(current_colour, - STEP);
       break;
-    case 0x1275C:
+    case 0x1275C: // ok
       // Serial.println("ok");
       changeColour();
       break;
-    case 0x275C:
+    case 0x275C: // ok
       // Serial.println("ok");
       changeColour();
       break;
-    case 0x270C:
+    case 0x270C: // pwr
       //Serial.println("pwr");
       switchPwr();
       break;
-    case 0x1270C:
+    case 0x1270C: // pwr
       //Serial.println("pwr");
       switchPwr();
+      break;
+    case 0x27CB: // info
+      randomColour();
+      break;
+    case 0x127CB: // info
+      randomColour();
+      break;
+    case 0x2701: // 1
+      switchTo(1);
+      break;
+    case 0x12701: // 1
+      switchTo(1);
+      break;
+    case 0x2702: // 2
+      switchTo(2);
+      break;
+    case 0x12702: // 2
+      switchTo(2);
+      break;
+    case 0x2703: // 3
+      switchTo(3);
+      break;
+    case 0x12703: // 3
+      switchTo(3);
+      break;
+    case 0x2700: // 0
+      saving = true;
+      break;
+    case 0x12700: // 0
+      saving = true;
       break;
    }
+
+   return 11;
 }
+
+
+// ==============  Decode numbers for saving ===================================
+
+uint8_t decodeSaving() {  // bulls**t function but no can do
+  switch(results.value) {
+    case 0x2701: // 1
+      return 1;
+    case 0x12701: // 1
+      return 1;
+    case 0x2702: // 2
+      return 2;
+    case 0x12702: // 2
+      return 2;
+    case 0x2703: // 3
+      return 3;
+    case 0x12703: // 3
+      return 3;
+    default:
+      return 11;
+  }
+}
+
+
+// ==============  Set random colour  ==========================================
+
+void randomColour() {
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = random(1001);
+  }
+  updatePwm(1000);
+  power = true;
+}
+
+
+// ==============  Save current colour ========================================
+
+void saveColour() {
+  // 11 won't ever get pressed :D
+  uint8_t pressed = 11;
+
+  while (saving) {
+    // Mark down the displayed colour
+    for (uint8_t i = 0; i < 3; i++) {
+      saved2[i] = percieved[i];
+    }
+
+    // Flash the colour slowly to indicate active saving mode
+    for (uint8_t i = 0; i < 3; i++) {
+      new_percieved[i] = percieved[i] / 2;
+    }
+    updatePwm(400);
+    for (uint8_t i = 0; i < 3; i++) {
+      new_percieved[i] = saved2[i];
+    }
+    updatePwm(400);
+
+    // If a button is pressed
+    if (irrecv.decode(&results)) {
+      pressed = decodeSaving();
+      if (pressed == 1 or pressed == 2 or pressed == 3) {
+        // Save the colour
+        saved_colours[pressed - 1] = {percieved[0], percieved[1], percieved[2]};
+        saving = false;
+        confirmSaved();
+      }
+      irrecv.resume();
+    }
+  }
+}
+
+
+// ==============  Confirm the saved colour  ===================================
+
+void confirmSaved() {
+
+  // Just flash the saved colour a couple times
+  for (uint8_t i = 0; i < 3; i++) {
+    saved2[i] = percieved[i];
+  }
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = percieved[i] / 2 ;
+  }
+  updatePwm(100);
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = saved2[i];
+  }
+  updatePwm(100);
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = percieved[i] / 2 ;
+  }
+  updatePwm(100);
+
+  for (uint8_t i = 0; i < 3; i++) {
+    new_percieved[i] = saved2[i];
+  }
+  updatePwm(100);
+}
+
 
 // ==============  Change the current colour  ==================================
 
@@ -201,11 +362,23 @@ void changeColour() {
   indicateSelected();
 }
 
+
+// ==============  Switch to a saved colour  ===================================
+
+void switchTo(uint8_t pressed) {
+  power = true;
+  new_percieved[0] = saved_colours[pressed - 1].r;
+  new_percieved[1] = saved_colours[pressed - 1].g;
+  new_percieved[2] = saved_colours[pressed - 1].b;
+  updatePwm(1000);
+}
+
+
 // ==============  Indicate the selected colour  ===============================
 
 void indicateSelected() {
   for (uint8_t i = 0; i < 3; i++) {
-    saved[i] = percieved[i];
+    saved2[i] = percieved[i];
   }
 
   for (uint8_t i = 0; i < 3; i++) {
@@ -220,7 +393,7 @@ void indicateSelected() {
   updatePwm(400);
 
   for (uint8_t i = 0; i < 3; i++) {
-    new_percieved[i] = saved[i];
+    new_percieved[i] = saved2[i];
   }
   updatePwm(400);
 }
@@ -228,19 +401,20 @@ void indicateSelected() {
 // ==============  Update PWM states  ==========================================
 
 void updatePwm(uint16_t duration) {
-  if (duration == 0) {
+  if (duration == 0) {  // Instant change, for encoders
     for (uint8_t i = 0; i < 3; i++) {
       pwm[i] = (255.0)/(pow(1000, 3)) * pow(new_percieved[i], 3);
       analogWrite(pwm_pins[i], pwm[i]);
       percieved[i] = new_percieved[i];
     }
-  } else {
+  } else {  // Smoooooth change, for IR remote actions
     for (int t = 1; t < duration; t += 3) {
       for (uint8_t i = 0; i < 3; i++) {
 
         int diff = new_percieved[i] - percieved[i];
 
-        int ramp_perc = (diff/2) - (diff/2) * cos((t * PI) / duration ) + percieved[i];
+        int ramp_perc = (diff/2) - (diff/2) * cos((t * PI) / duration ) +
+                        percieved[i];
 
         pwm[i] = (255.0)/(pow(1000, 3)) * pow(ramp_perc, 3);
 
