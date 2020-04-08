@@ -4,6 +4,9 @@
 // IR Library
 #include <IRremote.h>
 
+// EEPROM Library ( For permanent saving feature )
+#include <EEPROM.h>
+
 // Rotary encoder clock pins
 #define r_clk  digitalRead(A0)
 #define g_clk  digitalRead(4)
@@ -21,7 +24,7 @@ uint8_t pwm_pins[3] = { 10, 5, 6 };
 #define STEP 50
 
 // Power state
-bool power = false;
+bool power = false;...
 
 // Are we saving a colour?
 bool saving = false;
@@ -69,7 +72,45 @@ Colour saved_colours[3] = {
   {0, 0, 0}
 };
 
+int ir_codes[] = { // When
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  101,  // UP
+  102,  // DOWN
+  103,  // LEFT
+  104,  // RIGHT
+  105,  // OK
+  106,  // STAR
+  107  // HASHTAG
+};
 
+int ir_hexcodes[] = {
+  0xFF4AB5,
+  0xFF6897,
+  0xFF9867,
+  0xFFB04F,
+  0xFF30CF,
+  0xFF18E7,
+  0xFF7A85,
+  0xFF10EF,
+  0xFF38C7,
+  0xFF5AA5,
+  0xFF629D,
+  0xFFA857,
+  0xFF22DD,
+  0xFFC23D,
+  0xFF02FD,
+  0xFF42BD,
+  0xFF52AD
+};
 
 
 // ==============  IR Reciever  ================================================
@@ -139,8 +180,8 @@ void loop() {
 
   // IR reciever
   if (irrecv.decode(&results)) {
-    //Serial.println(results.value, HEX);
-    decodeIr();
+    Serial.println(results.value, HEX);
+    irActions();
     irrecv.resume();
     updatePwm(100);
   }
@@ -179,73 +220,104 @@ void step(uint8_t colour, int step) {
 
 // ==============  Decode Ir reciever values  ==================================
 
-void decodeIr() {
-  switch(results.value) {
-    case 0x12758: // up
-      // Serial.println("up");
-      step(current_colour, STEP);
-      break;
-    case 0x2758: // up
-      // Serial.println("up");
-      step(current_colour, STEP);
-      break;
-    case 0x12759: // down
-      // Serial.println("decodeIr.down");
-      step(current_colour, - STEP);
-      break;
-    case 0x2759: // down
-      // Serial.println("decideIr.down");
-      step(current_colour, - STEP);
-      break;
-    case 0x1275C: // ok
-      // Serial.println("ok");
-      changeColour();
-      break;
-    case 0x275C: // ok
-      // Serial.println("ok");
-      changeColour();
-      break;
-    case 0x270C: // pwr
-      //Serial.println("pwr");
-      switchPwr();
-      break;
-    case 0x1270C: // pwr
-      //Serial.println("pwr");
-      switchPwr();
-      break;
-    case 0x27CB: // info
-      randomColour();
-      break;
-    case 0x127CB: // info
-      randomColour();
-      break;
-    case 0x2701: // 1
-      switchTo(1);
-      break;
-    case 0x12701: // 1
-      switchTo(1);
-      break;
-    case 0x2702: // 2
-      switchTo(2);
-      break;
-    case 0x12702: // 2
-      switchTo(2);
-      break;
-    case 0x2703: // 3
-      switchTo(3);
-      break;
-    case 0x12703: // 3
-      switchTo(3);
-      break;
-    case 0x2700: // 0
-      saving = true;
-      break;
-    case 0x12700: // 0
-      saving = true;
-      break;
-   }
+int decodeIrv2() {
+  Serial.println("decodeIrv2.called");
+  int value = results.value;
 
-   return 11;
+  for (uint8_t i = 0; i < 17; i++) {
+    if (value == ir_hexcodes[i]) {
+      Serial.print("decodeIrv2.returning ");
+      Serial.println(ir_codes[i]);
+      return ir_codes[i];
+    }
+  }
+
+  return -1;
+}
+
+void irActions() {
+  int key = decodeIrv2();
+  if (key == 0) {
+    saving = true;
+  } else if (key >= 1 && key <= 9) {
+    switchTo(key);
+  } else if (key == 105) {
+    changeColour();
+  } else if (key == 101) {
+    step(current_colour, STEP);
+  } else if (key == 102) {
+    step(current_colour, - STEP);
+  } else if (key == 106) {
+    randomColour();
+  } else if (key == 107) {
+    switchPwr();
+  }
+  // switch(results.value) {
+  //   case 0x12758: // up
+  //     // Serial.println("up");
+  //     step(current_colour, STEP);
+  //     break;
+  //   case 0x2758: // up
+  //     // Serial.println("up");
+  //     step(current_colour, STEP);
+  //     break;
+  //   case 0x12759: // down
+  //     // Serial.println("decodeIr.down");
+  //     step(current_colour, - STEP);
+  //     break;
+  //   case 0x2759: // down
+  //     // Serial.println("decideIr.down");
+  //     step(current_colour, - STEP);
+  //     break;
+  //   case 0x1275C: // ok
+  //     // Serial.println("ok");
+  //     changeColour();
+  //     break;
+  //   case 0x275C: // ok
+  //     // Serial.println("ok");
+  //     changeColour();
+  //     break;
+  //   case 0x270C: // pwr
+  //     //Serial.println("pwr");
+  //     switchPwr();
+  //     break;
+  //   case 0x1270C: // pwr
+  //     //Serial.println("pwr");
+  //     switchPwr();
+  //     break;
+  //   case 0x27CB: // info
+  //     randomColour();
+  //     break;
+  //   case 0x127CB: // info
+  //     randomColour();
+  //     break;
+  //   case 0x2701: // 1
+  //     switchTo(1);
+  //     break;
+  //   case 0x12701: // 1
+  //     switchTo(1);
+  //     break;
+  //   case 0x2702: // 2
+  //     switchTo(2);
+  //     break;
+  //   case 0x12702: // 2
+  //     switchTo(2);
+  //     break;
+  //   case 0x2703: // 3
+  //     switchTo(3);
+  //     break;
+  //   case 0x12703: // 3
+  //     switchTo(3);
+  //     break;
+  //   case 0x2700: // 0
+  //     saving = true;
+  //     break;
+  //   case 0x12700: // 0
+  //     saving = true;
+  //     break;
+  //  }
+  //
+  //  return 11;
 }
 
 
@@ -306,16 +378,27 @@ void saveColour() {
 
     // If a button is pressed
     if (irrecv.decode(&results)) {
-      pressed = decodeSaving();
-      if (pressed == 1 or pressed == 2 or pressed == 3) {
+      pressed = decodeIrv2();
+      if (pressed >= 1 && pressed <= 9) {
         // Save the colour
-        saved_colours[pressed - 1] = {percieved[0], percieved[1], percieved[2]};
+        permanentSaveCurrent(pressed);
+        // saved_colours[pressed - 1] = {percieved[0], percieved[1], percieved[2]};
         saving = false;
         confirmSaved();
       }
       irrecv.resume();
     }
   }
+}
+
+
+// ==============  Save current colour to EEPROM  ==============================
+
+void permanentSaveCurrent(uint8_t buttonPressed) {
+  int address = (buttonPressed - 1) * 3;
+  EEPROM.write(address, percieved[0] / 1000.0 * 255.0);
+  EEPROM.write(address + 1, percieved[1] / 1000.0 * 255.0);
+  EEPROM.write(address + 2, percieved[2] / 1000.0 * 255.0);
 }
 
 
@@ -367,9 +450,10 @@ void changeColour() {
 
 void switchTo(uint8_t pressed) {
   power = true;
-  new_percieved[0] = saved_colours[pressed - 1].r;
-  new_percieved[1] = saved_colours[pressed - 1].g;
-  new_percieved[2] = saved_colours[pressed - 1].b;
+  int address = (pressed - 1) * 3;
+  new_percieved[0] = EEPROM.read(address) / 255.0 * 1000.0;
+  new_percieved[1] = EEPROM.read(address + 1) / 255.0 * 1000.0;
+  new_percieved[2] = EEPROM.read(address + 2) / 255.0 * 1000.0;
   updatePwm(1000);
 }
 
